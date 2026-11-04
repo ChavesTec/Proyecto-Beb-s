@@ -393,6 +393,15 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# Telegram (EP09). Ninguna recibe un JWT de usuario: enviar-alerta la llama la base
+# con el encabezado x-alertas-secreto y telegram-webhook la llama Telegram con
+# X-Telegram-Bot-Api-Secret-Token. Cada función valida su secreto compartido.
+[functions.enviar-alerta]
+verify_jwt = false
+
+[functions.telegram-webhook]
+verify_jwt = false
+
 [analytics]
 enabled = false
 port = 44327

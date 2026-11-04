@@ -9,6 +9,13 @@ y permite que cada usuario vincule su chat con un código.
 > **Todos:** abran el bot y presionen **Iniciar**. Un bot no puede escribirle a
 > alguien que no le ha hablado primero.
 
+> **Actualización (2026-11-04):** la vinculación con código, el webhook, el trigger
+> sobre `alertas` con `pg_net` y los reintentos ya están implementados en
+> `supabase/migrations/20261104000000_telegram_envio.sql`,
+> `supabase/functions/enviar-alerta/` y `supabase/functions/telegram-webhook/`.
+> Configuración y estado de las pruebas: README.md e IMPLEMENTACION_ESTADO.md.
+> La tabla de abajo es el estado original del sprint.
+
 ---
 
 ## Estado actual

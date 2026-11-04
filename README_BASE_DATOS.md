@@ -34,8 +34,8 @@ TUTORIAL_PRUEBAS_DOCKER.md                      ← cómo correr todas las prueb
    la migración 5.
 2. Ejecutar las migraciones en orden, con `supabase db push` o en el SQL Editor.
 3. Ejecutar la migración de Telegram (`20261101120000_notificaciones_telegram.sql`).
-   `supabase db push` solo lee `supabase/migrations/`, y hoy ese archivo está en
-   `SPRINT 3/supabase/` de la rama de Telegram: hay que moverlo allí.
+   Ya está en `supabase/migrations/`, junto con `20261104000000_telegram_envio.sql`
+   (vinculación, trigger de envío y reintentos). Su configuración está en README.md.
 4. Crear las cuatro cuentas que indica `supabase/seed.sql` y ejecutar ese archivo.
 5. En Authentication → Providers → Email, poner la longitud mínima de contraseña en
    **8** (CA-01.1). Ese ajuste no viaja con las migraciones: `supabase/config.toml`

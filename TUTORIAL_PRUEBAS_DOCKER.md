@@ -220,16 +220,28 @@ from public.v_historial order by ocurrido_en desc limit 50;
 
 ## 7. Probar junto con la migración de Telegram
 
-1. Descarga `SPRINT 3/supabase/20261101120000_notificaciones_telegram.sql` de la
-   rama `TELEGRAM-ALERTAS-TRIGGER` en GitHub.
-2. Guárdalo en `supabase\migrations\`.
-3. Reconstruye la base con todas las migraciones:
+Las dos migraciones de Telegram (`20261101120000_notificaciones_telegram.sql` y
+`20261104000000_telegram_envio.sql`) ya están en `supabase\migrations\`, así que
+`supabase start` las aplica junto con las demás. Para reconstruir la base desde cero
+(solo la local):
 
 ```powershell
 npx -y supabase@3.0.0 db reset
 ```
 
-4. Repite las partes 4 y 5. Deben dar el mismo resultado.
+Luego repite las partes 4 y 5 (deben dar el mismo resultado) y ejecuta las pruebas de
+Telegram igual que la parte 4:
+
+```powershell
+docker cp pruebas\04_verificar_telegram.sql supabase_db_proyecto-bebes:/tmp/telegram.sql
+```
+
+```powershell
+docker exec -e PGPASSWORD=postgres supabase_db_proyecto-bebes psql -U supabase_admin -h localhost -d postgres -f /tmp/telegram.sql
+```
+
+Sin el Vault configurado, las alertas quedan `pendiente`: el envío real necesita los
+pasos de la sección Telegram de README.md.
 
 ---
 

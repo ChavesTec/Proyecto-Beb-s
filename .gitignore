@@ -1,0 +1,26 @@
+# Secretos y configuración local: nunca se versionan (RNF-15)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+supabase/.env
+supabase/functions/.env
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# Exportaciones locales
+*.csv
+
+# Editores y sistema
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
