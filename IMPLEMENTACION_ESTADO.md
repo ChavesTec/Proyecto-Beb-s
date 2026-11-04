@@ -9,7 +9,12 @@ Fecha: 2026-11-04 · Rama: `Development`
 | `pytest`: 99 pruebas de la app, con dobles del SDK de Supabase | **99 pasan, 0 fallan** (Python 3.14.7, Windows 11) |
 | Prueba de humo de la UI: la app real arranca, intenta iniciar sesión contra un servidor inexistente, recorre las 11 pantallas con datos simulados y cierra sesión | Sin excepciones; «No hay conexión con Supabase» en el login; 0 pantallas privadas tras cerrar sesión |
 | Realtime sin servidor | Pasa a «degradado» en unos 9 s y su hilo se detiene sin fugas |
-| `pruebas/02`, `pruebas/03`, `pruebas/04` contra Supabase local | **No ejecutadas por falta de configuración**: este equipo no tiene Docker ni Node.js |
+| `supabase start` local (Docker): aplica las 7 migraciones, incluidas las dos de Telegram | Sin errores |
+| `pruebas/02_verificar_base_datos.sql` (Supabase local) | **135 pruebas, 0 fallas** |
+| `pruebas/04_verificar_telegram.sql` (Supabase local) | **15 pruebas, 0 fallas** |
+| `pruebas/03_probar_servicios.py` (Auth, API, Storage, Realtime, pg_cron reales) | **43 pruebas, 0 fallas**; comando entregado en 0,32 s; fuera de línea detectado a los 80 s |
+| Repositorios y servicios de la app contra Supabase local: registro, login, perfiles, compartir, registrar/asignar/reasignar, configuración y `23514`, horarios traslapados, comandos y siesta, permisos de solo lectura (0 filas), tomas, recordatorios, MP3, galería y URL firmada, historial, CSV, alertas, código de Telegram, eliminar perfil, cierre de sesión | **49 pruebas, 0 fallas** (script de verificación local, no incluido en el repositorio) |
+| Realtime de la app (`ServicioRealtime`) contra Supabase local | Se conecta con el JWT del usuario y recibe `configuracion UPDATE` y `comandos INSERT` en 0,33 s |
 | Envío real por Telegram y latencias de RNF-01/RNF-02 | **No ejecutados**: falta el token del bot, el despliegue de las funciones y el Vault |
 | Edge Functions (TypeScript/Deno) | **No ejecutadas ni compiladas**: no hay Deno ni Supabase CLI en este equipo |
 
@@ -20,6 +25,8 @@ no se desplegaron funciones y no se cambiaron ajustes.
 
 - ✅ **Implementada y verificada** (pruebas unitarias o prueba de humo; sin servicios reales).
 - 🟡 **Implementada, sin verificar contra servicios reales** (Supabase, hardware o Telegram).
+  Desde la corrida local del 2026-11-04, las consultas de la app de las historias marcadas 🟡
+  ya se verificaron contra Supabase local; lo pendiente es el proyecto oficial, el hardware y Telegram.
 - ⏳ **Pendiente por una dependencia externa.**
 - ⛔ **Fuera del alcance actual.**
 
@@ -83,7 +90,7 @@ no se desplegaron funciones y no se cambiaron ajustes.
 ## Pendiente
 
 - Aplicar las migraciones en el proyecto oficial y configurar Telegram (pasos en README.md). Requiere autorización.
-- Correr `pruebas/02`, `03` y `04` en Supabase local con Docker y la app contra esa base.
+- Probar la interfaz a mano contra Supabase local con un controlador real o simulado (las consultas ya se verificaron).
 - Confirmar con los firmwares: claves de `ultima_lectura`, parámetros de `audio_reproducir`, número de secuencias del móvil.
 - HU-12 (voz): firmware de la cuna y canal de audio.
 - Borrado de fotos de más de 90 días (Edge Function aparte, ya señalado en README_BASE_DATOS.md).
