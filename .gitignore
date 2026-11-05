@@ -7,6 +7,8 @@
 secrets/
 supabase/.env
 supabase/functions/.env
+# Contraseñas generadas para las cuentas de prueba de Supabase local
+pruebas/.credenciales_locales.json
 # Credenciales de Wi-Fi y del controlador en cada placa
 firmware/**/config.json
 
