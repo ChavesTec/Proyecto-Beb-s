@@ -4,7 +4,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
-from app.config.valores import MAX_SECUENCIAS_MOVIL
+from app.config.valores import SECUENCIAS_MOVIL
 from app.errores import ErrorValidacion
 from app.services import dominio
 from app.ui.widgets import Tabla
@@ -40,8 +40,9 @@ class EditorHorarios(ttk.LabelFrame):
         self.secuencia = None
         if tipo == "movil":
             ttk.Label(fila, text="Secuencia", style="Tarjeta.TLabel").pack(side="left")
-            self.secuencia = ttk.Spinbox(fila, from_=1, to=MAX_SECUENCIAS_MOVIL, width=4, state="readonly")
-            self.secuencia.set(1)
+            self._numeros_sec = list(SECUENCIAS_MOVIL)
+            self.secuencia = ttk.Combobox(fila, state="readonly", width=20, values=list(SECUENCIAS_MOVIL.values()))
+            self.secuencia.current(0)
             self.secuencia.pack(side="left", padx=(4, 12))
         self.btn_agregar = ttk.Button(fila, text="Agregar", style="Primario.TButton", command=self._agregar)
         self.btn_agregar.pack(side="left")
@@ -74,7 +75,7 @@ class EditorHorarios(ttk.LabelFrame):
         datos = {"dispositivo_id": self.dispositivo_id, "tipo": self.tipo, "dias": dias,
                  "hora_inicio": inicio, "hora_fin": fin, "activo": True}
         if self.secuencia is not None:
-            datos["secuencia"] = int(self.secuencia.get())
+            datos["secuencia"] = self._numeros_sec[self.secuencia.current()]
         self.pantalla.tarea(lambda: self.pantalla.servicios.dispositivos.crear_horario(datos),
                             lambda _: self.cargar(), boton=self.btn_agregar, exito="Horario guardado.")
 

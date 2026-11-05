@@ -1,0 +1,14 @@
+{
+  "wifi_ssid": "",
+  "wifi_clave": "",
+  "supabase_url": "https://<su-proyecto>.supabase.co",
+  "supabase_anon_key": "<clave pública anon/publishable>",
+  "correo_controlador": "controlador-c@ecosistema.test",
+  "clave_controlador": "",
+  "codigo_dispositivo": "MOVIL-001",
+  "salida": "neopixel",
+  "pin_neopixel": 23,
+  "cantidad_leds": 16,
+  "pines_pwm": [2, 3, 4, 5, 6, 7],
+  "brillo_maximo": 30
+}

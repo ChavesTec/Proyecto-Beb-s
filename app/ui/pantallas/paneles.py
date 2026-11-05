@@ -10,7 +10,8 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, ttk
 
-from app.config.valores import MAX_SECUENCIAS_MOVIL, PREDETERMINADOS
+from app.config.valores import (PREDETERMINADOS, SECUENCIAS_MOVIL, VELOCIDADES_MOVIL, nombre_secuencia,
+                                nombre_velocidad)
 from app.config.zona import formato_local, hace_cuanto
 from app.errores import ErrorValidacion
 from app.services import dominio
@@ -377,25 +378,27 @@ class PanelMovil(PanelTipo):
         self.btn_encender = self.boton(caja, "Encender", lambda: self._encender(True), "Primario.TButton", row=0, column=1, padx=8)
         self.btn_apagar = self.boton(caja, "Apagar", lambda: self._encender(False), row=0, column=2)
         ttk.Label(caja, text="Secuencia", style="Tarjeta.TLabel").grid(row=1, column=0, sticky="w", pady=(10, 0))
-        self.secuencia = ttk.Combobox(caja, state="readonly", width=16,
-                                      values=[f"Secuencia {i}" for i in range(1, MAX_SECUENCIAS_MOVIL + 1)])
-        self.secuencia.grid(row=1, column=1, sticky="w", pady=(10, 0))
+        self._numeros_sec = list(SECUENCIAS_MOVIL)
+        self.secuencia = ttk.Combobox(caja, state="readonly", width=22, values=list(SECUENCIAS_MOVIL.values()))
+        self.secuencia.grid(row=1, column=1, columnspan=2, sticky="w", pady=(10, 0))
         self.secuencia.bind("<<ComboboxSelected>>", lambda e: self.guardar(
-            {"movil_secuencia": self.secuencia.current() + 1}, exito="Secuencia elegida."))
+            {"movil_secuencia": self._numeros_sec[self.secuencia.current()]}, exito="Secuencia elegida."))
         self._controles.append(self.secuencia)
         ttk.Label(caja, text="Velocidad", style="Tarjeta.TLabel").grid(row=2, column=0, sticky="w", pady=(10, 0))
         self.var_vel = tk.IntVar(value=2)
         fila = ttk.Frame(caja, style="Tarjeta.TFrame")
         fila.grid(row=2, column=1, columnspan=3, sticky="w", pady=(10, 0))
-        for valor, texto in ((1, "Lenta"), (2, "Media"), (3, "Rápida")):
+        for valor, texto in VELOCIDADES_MOVIL.items():
             r = ttk.Radiobutton(fila, text=texto, value=valor, variable=self.var_vel, style="Tarjeta.TRadiobutton",
                                 command=lambda: self.guardar({"movil_velocidad": self.var_vel.get()}, exito="Velocidad cambiada."))
             r.pack(side="left", padx=(0, 10))
             self._controles.append(r)
-        ttk.Label(caja, text=f"Las secuencias las define el firmware del móvil; la base admite cualquier número ≥ 1 "
-                             f"(aquí 1 a {MAX_SECUENCIAS_MOVIL}). Cambiar la velocidad no reinicia la secuencia si el "
-                             "firmware lo soporta (CA-21.1).", style="TarjetaSuave.TLabel", wraplength=760,
-                  justify="left").grid(row=3, column=0, columnspan=4, sticky="w", pady=(8, 0))
+        self.lbl_real = ttk.Label(caja, style="Tarjeta.TLabel", justify="left")
+        self.lbl_real.grid(row=3, column=0, columnspan=4, sticky="w", pady=(10, 0))
+        ttk.Label(caja, text="Las cinco secuencias son las del firmware (firmware/movil). Cambiar la velocidad no "
+                             "reinicia la secuencia (CA-21.1). El móvil lee estos ajustes cada 2 s y se apaga solo si "
+                             "pierde la conexión con Supabase por 10 minutos.", style="TarjetaSuave.TLabel",
+                  wraplength=760, justify="left").grid(row=4, column=0, columnspan=4, sticky="w", pady=(6, 0))
         self.horarios = EditorHorarios(self, pantalla, d["id"], "movil", "Horarios del móvil (HU-22)",
                                        "En el minuto de inicio se enciende con la secuencia elegida; al terminar se apaga. "
                                        "La base rechaza horarios traslapados.")
@@ -410,13 +413,36 @@ class PanelMovil(PanelTipo):
         if not config:
             return
         encendido = bool(config.get("movil_encendido"))
-        self.insignia.cambiar("Encendido" if encendido else "Apagado", "exito" if encendido else "neutro")
+        self.insignia.cambiar("Ordenado: encendido" if encendido else "Ordenado: apagado",
+                              "exito" if encendido else "neutro")
         sec = int(config.get("movil_secuencia") or 1)
-        if 1 <= sec <= MAX_SECUENCIAS_MOVIL:
-            self.secuencia.current(sec - 1)
+        if sec in self._numeros_sec:
+            self.secuencia.current(self._numeros_sec.index(sec))
         else:
-            self.secuencia.set(f"Secuencia {sec}")
+            self.secuencia.set(nombre_secuencia(sec))
         self.var_vel.set(int(config.get("movil_velocidad") or 2))
+        self.lbl_real.configure(text=self._estado_real(d, config))
+
+    @staticmethod
+    def _estado_real(d: dict, config: dict) -> str:
+        """Lo que el móvil informa en ultima_lectura (no se asume que obedeció)."""
+        real = d.get("ultima_lectura") if isinstance(d.get("ultima_lectura"), dict) else None
+        if not real or "encendido" not in real:
+            return "El móvil aún no informa su estado."
+        if dominio.estado_conexion(d) != dominio.EN_LINEA:
+            return "Último estado informado (el móvil está fuera de línea): " + (
+                "encendido" if real["encendido"] else "apagado")
+        motivos = {"sin_conexion": "se apagó por perder la conexión", "usuario": "apagado", "inicio": "recién iniciado"}
+        if real["encendido"]:
+            texto = (f"El móvil informa: encendido · {nombre_secuencia(real.get('secuencia'))} · "
+                     f"{nombre_velocidad(real.get('velocidad'))}")
+        else:
+            texto = "El móvil informa: " + motivos.get(real.get("motivo"), "apagado")
+        if bool(real["encendido"]) != bool(config.get("movil_encendido")):
+            texto += " (todavía no aplica la última orden)"
+        if real.get("aviso"):
+            texto += f" · aviso: {real['aviso']}"
+        return texto
 
     def _encender(self, valor: bool):
         self.guardar({"movil_encendido": valor}, self.btn_encender if valor else self.btn_apagar,

@@ -222,7 +222,9 @@ def describir_horario(h: dict) -> str:
     dias = ", ".join(NOMBRES_DIAS[d] for d in sorted(h.get("dias") or []) if 0 <= d <= 6)
     texto = f"{dias} · {str(h.get('hora_inicio', ''))[:5]}–{str(h.get('hora_fin', ''))[:5]}"
     if h.get("secuencia"):
-        texto += f" · secuencia {h['secuencia']}"
+        from app.config.valores import nombre_secuencia
+
+        texto += f" · {nombre_secuencia(h['secuencia'])}"
     if str(h.get("hora_fin", "")) < str(h.get("hora_inicio", "")):
         texto += " (cruza medianoche)"
     if not h.get("activo", True):
@@ -288,6 +290,8 @@ _CLAVES_LECTURA = {
     "aciertos": ("Aciertos", ""),
     "secuencia": ("Secuencia", ""),
     "velocidad": ("Velocidad", ""),
+    "motivo": ("Motivo del último apagado", ""),
+    "aviso": ("Aviso del dispositivo", ""),
     "encendido": ("Encendido", ""),
     "reproduciendo": ("Reproduciendo", ""),
 }
@@ -304,6 +308,10 @@ def _formato_valor(valor: Any, unidad: str) -> str:
     return f"{valor} {unidad}".strip()
 
 
+_MOTIVOS_APAGADO = {"sin_conexion": "perdió la conexión con Supabase", "usuario": "orden de la app o del horario",
+                    "inicio": "el dispositivo acaba de arrancar"}
+
+
 def lecturas_de(dispositivo: dict) -> list[Lectura]:
     """Convierte ultima_lectura (jsonb libre) en filas legibles, sin inventar valores."""
     datos = dispositivo.get("ultima_lectura")
@@ -317,6 +325,14 @@ def lecturas_de(dispositivo: dict) -> list[Lectura]:
         etiqueta, unidad = _CLAVES_LECTURA.get(clave, (clave.replace("_", " ").capitalize(), ""))
         if dispositivo.get("tipo") == "biberon" and clave == "temperatura":
             etiqueta = "Temperatura de la leche"
+        if clave == "motivo" and valor in _MOTIVOS_APAGADO:
+            resultado.append(Lectura(etiqueta, _MOTIVOS_APAGADO[valor]))
+            continue
+        if dispositivo.get("tipo") == "movil" and clave in ("secuencia", "velocidad"):
+            from app.config.valores import nombre_secuencia, nombre_velocidad
+
+            resultado.append(Lectura(etiqueta, (nombre_secuencia if clave == "secuencia" else nombre_velocidad)(valor)))
+            continue
         resultado.append(Lectura(etiqueta, _formato_valor(valor, unidad)))
     return resultado
 

@@ -52,8 +52,10 @@ def resumen_tipo(d: dict, config: dict | None, lecturas: dict[str, dict]) -> lis
             lineas.append("Modo siesta: ACTIVO" if config.get("siesta_activa") else "Modo siesta: inactivo")
     elif tipo == "movil":
         if config:
-            lineas.append(("Encendido" if config.get("movil_encendido") else "Apagado")
-                          + f" · secuencia {config['movil_secuencia']} · velocidad {config['movil_velocidad']}")
+            from app.config.valores import nombre_secuencia, nombre_velocidad
+
+            lineas.append(("Ordenado: encendido" if config.get("movil_encendido") else "Ordenado: apagado")
+                          + f" · {nombre_secuencia(config['movil_secuencia'])} · {nombre_velocidad(config['movil_velocidad'])}")
     elif tipo == "seguridad":
         if config:
             lineas.append("Seguridad: ARMADA" if config.get("seguridad_armada") else "Seguridad: desarmada")

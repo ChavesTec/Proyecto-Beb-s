@@ -29,9 +29,26 @@ PREDETERMINADOS = {
     "juguete": {"juguete_tiempo_ronda_s": 10, "juguete_volumen": 50},
 }
 
-# Las secuencias del móvil las define el firmware (CA-20.1); la base solo exige > 0.
-# El firmware no está en el repositorio: se ofrecen 1..N como número de secuencia.
-MAX_SECUENCIAS_MOVIL = 6
+# Secuencias y velocidades del móvil (CA-20.1, HU-21). La base guarda números
+# (movil_secuencia >= 1, movil_velocidad 1..3); esta tabla es la misma que usa el
+# firmware en firmware/movil/luces.py (NUMERO_A_SECUENCIA / NUMERO_A_VELOCIDAD).
+SECUENCIAS_MOVIL = {1: "Alternada", 2: "Progresiva", 3: "Colores por grupos",
+                    4: "Suave (respiración)", 5: "Ronda"}
+VELOCIDADES_MOVIL = {1: "Lenta", 2: "Media", 3: "Rápida"}
+
+
+def nombre_secuencia(numero) -> str:
+    try:
+        return SECUENCIAS_MOVIL.get(int(numero), f"Secuencia {numero}")
+    except (TypeError, ValueError):
+        return "—"
+
+
+def nombre_velocidad(numero) -> str:
+    try:
+        return VELOCIDADES_MOVIL.get(int(numero), f"Velocidad {numero}")
+    except (TypeError, ValueError):
+        return "—"
 
 # Polling de respaldo cuando Realtime no está disponible (segundos).
 SEGUNDOS_POLLING_DEGRADADO = 10
