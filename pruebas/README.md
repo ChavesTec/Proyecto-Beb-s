@@ -71,6 +71,7 @@ Conserva los datos. Con `--no-backup` se borran.
 | `02_verificar_base_datos.sql` | Pruebas de la lógica SQL (ver [TUTORIAL_PRUEBAS_DOCKER.md](../TUTORIAL_PRUEBAS_DOCKER.md)) |
 | `03_probar_servicios.py` | Pruebas de Auth, API, Storage, Realtime y pg_cron |
 | `04_verificar_telegram.sql` | Pruebas de la vinculación y el envío de Telegram |
+| `05_probar_firmware_seguridad.py` | El firmware de la seguridad (cámara simulada) contra la base: señal, armado, foto PNG, `tomar_foto` y reenvío |
 | `local_comun.py` | Funciones compartidas por los dos scripts de datos de prueba |
 
 Las pruebas 02 a 04 dejan cuentas y dispositivos propios en la base. No se ven desde

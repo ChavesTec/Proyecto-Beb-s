@@ -1,0 +1,13 @@
+{
+  "wifi_ssid": "",
+  "wifi_clave": "",
+  "supabase_url": "https://<su-proyecto>.supabase.co",
+  "supabase_anon_key": "<clave pública anon/publishable>",
+  "correo_controlador": "controlador-a@ecosistema.test",
+  "clave_controlador": "",
+  "codigo_dispositivo": "SEGURIDAD-001",
+  "distancia_disparo_cm": 20,
+  "byte_alto_primero": true,
+  "patron_de_prueba": false,
+  "diagnostico": false
+}

@@ -35,7 +35,7 @@ Con [uv](https://docs.astral.sh/uv/) también sirve: `uv venv .venv` y
 
 Dependencias (`requirements.txt`): `supabase==2.33.0` (la misma versión que usan las
 pruebas de `pruebas/`), `python-dotenv`, `tzdata` (zona `America/Costa_Rica` en Windows),
-`Pillow` (miniaturas JPEG de la galería) y `pytest`.
+`Pillow` (miniaturas PNG y JPEG de la galería) y `pytest`.
 
 ## Configuración (`.env`)
 

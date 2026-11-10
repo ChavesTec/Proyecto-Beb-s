@@ -2,7 +2,7 @@
 # main.py · EP05 Móvil de luces LED conectado a Supabase (MicroPython)
 #
 # Placa: ESP32 (controlador C de la arquitectura) o Raspberry Pi Pico W.
-# Copiar a la placa: main.py, luces.py, salidas.py, supabase_micro.py y
+# Copiar a la placa: main.py, luces.py, salidas.py, ../comun/supabase_micro.py y
 # config.json (a partir de config.example.json; NO se sube a Git).
 #
 # Contrato con la base (README_BASE_DATOS.md, "Contrato para los dispositivos"):

@@ -472,7 +472,7 @@ class PanelSeguridad(PanelTipo):
         ajustes = self.caja("Fotos de evidencia (HU-26)")
         self.intervalo = self.entrada(ajustes, "Intervalo entre fotos (s)", 0, 0)
         self.btn_intervalo = self.boton(ajustes, "Guardar", self._guardar_intervalo, "Primario.TButton", row=0, column=2)
-        ttk.Label(ajustes, text="Fotos JPEG 640×480 de hasta 150 KB en Storage privado.", style="TarjetaSuave.TLabel").grid(
+        ttk.Label(ajustes, text="Fotos PNG 154×120 (aparato de seguridad) o JPEG, de hasta 150 KB en Storage privado.", style="TarjetaSuave.TLabel").grid(
             row=1, column=0, columnspan=4, sticky="w", pady=(6, 0))
 
         self.horarios = EditorHorarios(self, pantalla, d["id"], "seguridad", "Armado programado",

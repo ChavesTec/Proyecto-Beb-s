@@ -25,6 +25,14 @@ TAMANO_PAGINA_GALERIA = 24
 MINIATURA = (220, 165)
 
 
+def ampliada(imagen, ancho_minimo: int = 480):
+    """Las fotos del aparato de seguridad son de 154×120: se agrandan para verlas bien."""
+    if imagen.width >= ancho_minimo:
+        return imagen
+    factor = -(-ancho_minimo // imagen.width)   # entero hacia arriba
+    return imagen.resize((imagen.width * factor, imagen.height * factor), Image.NEAREST)
+
+
 def descargar_firmada(servicios, ruta: str) -> bytes:
     """Pide una URL firmada (RLS decide si hay acceso) y descarga la foto con ella."""
     url = servicios.historial.url_firmada("capturas", ruta)
@@ -119,7 +127,7 @@ class PantallaGaleria(Pantalla):
             return
         self.estado.vacio(f"{total} captura(s). Haga clic en una foto para ampliarla.")
         if Image is None:
-            self.estado.error("Falta la biblioteca Pillow para mostrar fotos JPEG (pip install Pillow).")
+            self.estado.error("Falta la biblioteca Pillow para mostrar las fotos (pip install Pillow).")
         inst = self.servicios.instantanea
         columnas = 4
         for i in range(columnas):
@@ -170,7 +178,7 @@ class PantallaGaleria(Pantalla):
         def ok(contenido):
             if not etiqueta.winfo_exists():
                 return
-            imagen = Image.open(io.BytesIO(contenido))
+            imagen = ampliada(Image.open(io.BytesIO(contenido)))
             foto = ImageTk.PhotoImage(imagen)
             etiqueta.configure(image=foto, text="")
             etiqueta.image = foto

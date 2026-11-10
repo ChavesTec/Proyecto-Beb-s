@@ -10,7 +10,7 @@ con Supabase según el contrato de [README_BASE_DATOS.md](../../README_BASE_DATO
 | `main.py` | Arranque: Wi-Fi, hora NTP, hilo de red y bucle de luces |
 | `luces.py` | Secuencias y estado (sin red ni hardware: se prueba en la PC) |
 | `salidas.py` | Anillo WS2812B (`neopixel`) o LEDs sueltos por PWM |
-| `supabase_micro.py` | Auth, `registrar_senal`, `configuracion` y `comandos` por HTTP |
+| `../comun/supabase_micro.py` | Auth, `registrar_senal`, `configuracion` y `comandos` por HTTP (compartido con la seguridad) |
 | `config.example.json` | Plantilla de `config.json` (credenciales: **no se sube a Git**) |
 
 ## Cómo se comunica
@@ -48,7 +48,8 @@ llegaría la orden de apagar de un horario) y retoma lo que diga la base cuando 
 2. Copiar `config.example.json` como `config.json` y completarlo: Wi-Fi, URL del proyecto, clave
    pública (anon), correo y contraseña de la cuenta del controlador y código del dispositivo.
    `salida`: `"neopixel"` (anillo de 16 en GPIO23) o `"pwm"` (LEDs en `pines_pwm`).
-3. Subir a la placa `main.py`, `luces.py`, `salidas.py`, `supabase_micro.py` y `config.json`.
+3. Subir a la placa `main.py`, `luces.py`, `salidas.py`, `../comun/supabase_micro.py` y `config.json`
+   (todos en la raíz de la placa).
 4. Reiniciar: en la app el móvil pasa a «En línea» en unos segundos.
 
 ## Pendiente de confirmar con hardware
