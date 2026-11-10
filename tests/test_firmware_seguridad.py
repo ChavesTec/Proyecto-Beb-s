@@ -398,6 +398,17 @@ def test_insertar_evento_ignora_duplicados(cliente):
     assert json.loads(data) == {"dispositivo_id": "d1", "tipo": "presencia"}
 
 
+def test_json_con_tildes_va_en_bytes_utf8(cliente):
+    # urequests usa len(data) como Content-Length: con un str contaría caracteres
+    # y PostgREST recibiría el JSON cortado (PGRST102).
+    c, llamadas, respuestas = cliente
+    respuestas.append(_Respuesta(204, ""))
+    c.marcar_comando(7, "fallido", "La seguridad está desarmada", "2026-11-10T22:00:00-06:00")
+    data = llamadas[0][2]
+    assert isinstance(data, bytes)
+    assert json.loads(data.decode("utf-8"))["resultado"] == "La seguridad está desarmada"
+
+
 def test_leer_config_por_columnas_y_compatible_con_el_movil(cliente):
     c, llamadas, respuestas = cliente
     respuestas += [_Respuesta(200, '[{"seguridad_armada": true}]'), _Respuesta(200, "[]")]

@@ -62,7 +62,11 @@ class ClienteSupabase:
             encabezados["Authorization"] = "Bearer " + self.token
         if prefer:
             encabezados["Prefer"] = prefer
-        datos = crudo if crudo is not None else (json.dumps(cuerpo) if cuerpo is not None else None)
+        # El JSON va como bytes UTF-8: urequests calcula Content-Length con len(), que en
+        # un str cuenta caracteres y no bytes, y un texto con tildes («está», «cámara»)
+        # llegaba cortado a PostgREST (PGRST102 "Empty or invalid json").
+        datos = crudo if crudo is not None else (
+            json.dumps(cuerpo).encode("utf-8") if cuerpo is not None else None)
         try:
             r = requests.request(metodo, self.url + ruta, data=datos, headers=encabezados,
                                  timeout=self.tiempo_s)
