@@ -222,8 +222,11 @@ ok("RNF-05 sube una foto pequeña", True)
 falla("RNF-05 rechaza una foto de más de 150 KB",
       lambda: ctrl_a.storage.from_("capturas").upload(f"{seguridad_id}/grande.jpg", b"0" * 160_000, JPEG),
       "exceeded the maximum")
-falla("Rechaza una foto que no es JPEG",
-      lambda: ctrl_a.storage.from_("capturas").upload(f"{seguridad_id}/f.png", b"0" * 10, {"content-type": "image/png"}),
+ctrl_a.storage.from_("capturas").upload(f"{seguridad_id}/evidencia.png", b"\x89PNG" + b"0" * 1000,
+                                        {"content-type": "image/png"})
+ok("Acepta una foto PNG (aparato de seguridad)", True)
+falla("Rechaza una foto que no es JPEG ni PNG",
+      lambda: ctrl_a.storage.from_("capturas").upload(f"{seguridad_id}/f.gif", b"0" * 10, {"content-type": "image/gif"}),
       "mime type")
 falla("RNF-23 un controlador no sube a la carpeta de otro",
       lambda: ctrl_b.storage.from_("capturas").upload(f"{seguridad_id}/intruso.jpg", b"0" * 10, JPEG),

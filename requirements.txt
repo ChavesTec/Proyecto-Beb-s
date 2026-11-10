@@ -2,7 +2,7 @@
 supabase==2.33.0        # Auth, PostgREST, Realtime y Storage (misma versión que pruebas/)
 python-dotenv>=1.0,<2   # Carga .env
 tzdata>=2024.1          # Zona America/Costa_Rica en Windows (no trae base de zonas)
-Pillow>=10.0            # Miniaturas JPEG en la galería (Tk solo lee PNG/GIF)
+Pillow>=10.0            # Miniaturas y ampliación de fotos en la galería (PNG y JPEG)
 
 # Desarrollo y pruebas
 pytest>=8.0

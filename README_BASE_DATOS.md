@@ -137,7 +137,8 @@ casos que no sean estos.
 
 ### Foto de evidencia
 
-1. Subir a `capturas/<dispositivo_id>/<archivo>.jpg`: JPEG de 150 KB como máximo.
+1. Subir a `capturas/<dispositivo_id>/<archivo>.png` (o `.jpg`): PNG o JPEG de 150 KB como máximo.
+   El aparato de seguridad (Pico W + OV7670) sube PNG de 154×120 ([firmware/seguridad](firmware/seguridad/README.md)).
 2. Insertar el evento `presencia` o `puerta` con esa ruta en `foto_path`.
 
 El trigger crea la captura y la alerta con foto en una sola transacción.

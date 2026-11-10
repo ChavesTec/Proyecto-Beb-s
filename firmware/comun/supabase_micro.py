@@ -7,6 +7,9 @@
 #   * rpc('registrar_senal', {p_dispositivo, p_lectura})   (cada 5 s)
 #   * leer configuracion                             (al arrancar y en sondeo)
 #   * leer y marcar comandos pendientes
+#   * subir una foto a Storage e insertar eventos (aparato de seguridad)
+# Lo usan el móvil (firmware/movil) y la seguridad (firmware/seguridad): se
+# copia a la placa junto a su main.py.
 # Usa la clave pública (anon). Nunca la clave service_role.
 # Ningún método imprime tokens ni contraseñas.
 # ============================================================
@@ -51,14 +54,19 @@ class ClienteSupabase:
         self.vence = 0
 
     # ---------------------------------------------------------------- HTTP
-    def _pedir(self, metodo, ruta, cuerpo=None, autenticado=True, prefer=None):
-        encabezados = {"apikey": self.clave_publica, "Content-Type": "application/json"}
+    def _pedir(self, metodo, ruta, cuerpo=None, autenticado=True, prefer=None, crudo=None, tipo=None):
+        """cuerpo se envía como JSON; crudo (bytes) se envía tal cual con Content-Type tipo."""
+        encabezados = {"apikey": self.clave_publica, "Content-Type": tipo or "application/json"}
         if autenticado:
             self._asegurar_sesion()
             encabezados["Authorization"] = "Bearer " + self.token
         if prefer:
             encabezados["Prefer"] = prefer
-        datos = json.dumps(cuerpo) if cuerpo is not None else None
+        # El JSON va como bytes UTF-8: urequests calcula Content-Length con len(), que en
+        # un str cuenta caracteres y no bytes, y un texto con tildes («está», «cámara»)
+        # llegaba cortado a PostgREST (PGRST102 "Empty or invalid json").
+        datos = crudo if crudo is not None else (
+            json.dumps(cuerpo).encode("utf-8") if cuerpo is not None else None)
         try:
             r = requests.request(metodo, self.url + ruta, data=datos, headers=encabezados,
                                  timeout=self.tiempo_s)
@@ -115,10 +123,9 @@ class ClienteSupabase:
             raise ErrorSupabase(404, "El código %s no pertenece a esta credencial" % codigo)
         return filas[0]["id"]
 
-    def leer_config(self, dispositivo_id):
+    def leer_config(self, dispositivo_id, columnas="movil_encendido,movil_secuencia,movil_velocidad"):
         filas = self._con_reintento(lambda: self._pedir(
-            "GET", "/rest/v1/configuracion?select=movil_encendido,movil_secuencia,movil_velocidad"
-                   "&dispositivo_id=eq." + dispositivo_id))
+            "GET", "/rest/v1/configuracion?select=" + columnas + "&dispositivo_id=eq." + dispositivo_id))
         return filas[0] if filas else None
 
     def registrar_senal(self, dispositivo_id, lectura):
@@ -136,3 +143,23 @@ class ClienteSupabase:
             cuerpo["ejecutado_en"] = ejecutado_en
         self._con_reintento(lambda: self._pedir(
             "PATCH", "/rest/v1/comandos?id=eq.%d" % comando_id, cuerpo, prefer="return=minimal"))
+
+    def insertar_evento(self, evento):
+        """insert en eventos. Si el evento ya estaba (reenvío del buffer, RNF-17), se ignora."""
+        self._con_reintento(lambda: self._pedir(
+            "POST", "/rest/v1/eventos?on_conflict=dispositivo_id,ocurrido_en,tipo", evento,
+            prefer="resolution=ignore-duplicates,return=minimal"))
+
+    def subir_archivo(self, bucket, ruta, datos, tipo):
+        """Sube bytes a Storage. Devuelve False si el archivo ya existía (subida repetida)."""
+        destino = "/".join(_codificar(parte) for parte in ruta.split("/"))
+        try:
+            self._con_reintento(lambda: self._pedir(
+                "POST", "/storage/v1/object/%s/%s" % (bucket, destino), crudo=datos, tipo=tipo))
+        except ErrorSupabase as e:
+            texto = str(e)
+            # Storage responde 400 o 409 "Duplicate" si un intento anterior sí llegó.
+            if e.estado in (400, 409) and ("Duplicate" in texto or "already exists" in texto):
+                return False
+            raise
+        return True

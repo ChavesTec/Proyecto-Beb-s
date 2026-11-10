@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 CARPETA = Path(__file__).resolve().parents[1] / "firmware" / "movil"
+COMUN = CARPETA.parent / "comun"
 
 
 class _PWM:
@@ -40,6 +41,7 @@ sys.modules.setdefault("machine", types.SimpleNamespace(PWM=_PWM, Pin=_Pin))
 sys.modules.setdefault("neopixel", types.SimpleNamespace(NeoPixel=_NeoPixel))
 sys.modules.setdefault("urequests", types.SimpleNamespace(request=None))  # cada prueba lo reemplaza
 sys.path.insert(0, str(CARPETA))
+sys.path.insert(0, str(COMUN))
 
 import luces  # noqa: E402
 import salidas  # noqa: E402
