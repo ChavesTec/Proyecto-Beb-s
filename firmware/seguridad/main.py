@@ -47,6 +47,11 @@ COLUMNAS_CONFIG = "seguridad_armada,seguridad_intervalo_foto_s"
 TIPO_FOTO = "image/png"
 
 
+def liberar_memoria():
+    if gc:
+        gc.collect()
+
+
 def cargar_config():
     with open("config.json") as f:
         return json.load(f)
@@ -213,12 +218,9 @@ class Agente:
             if e.get("foto"):
                 ruta_remota = "%s/%s" % (self.dispositivo_id, e["foto"])
                 if not e.get("subida"):
-                    if gc:
-                        gc.collect()
-                    with open(self.cola.ruta(e), "rb") as f:
-                        datos = f.read()
-                    self.cliente.subir_archivo("capturas", ruta_remota, datos, TIPO_FOTO)
-                    datos = None
+                    liberar_memoria()
+                    # Se sube desde la flash en trozos: nunca está la foto entera en RAM.
+                    self.cliente.subir_archivo("capturas", ruta_remota, self.cola.ruta(e), TIPO_FOTO)
                     self.cola.marcar_subida(e)
             evento = {"dispositivo_id": self.dispositivo_id, "tipo": e["tipo"],
                       "descripcion": e.get("descripcion"), "foto_path": ruta_remota}
@@ -247,6 +249,9 @@ class Agente:
         self.cliente.registrar_senal(self.dispositivo_id, self.lectura())
 
     def vuelta_red(self, contador):
+        # Cada petición HTTPS necesita bloques grandes y continuos para TLS: se junta
+        # la basura de la vuelta anterior antes de abrir conexiones (ENOMEM).
+        liberar_memoria()
         if self.dispositivo_id is None:
             self.preparar()
         self.aplicar_config()

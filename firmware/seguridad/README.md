@@ -77,8 +77,11 @@ acepta `image/png` desde la migración `20261110000000_capturas_png.sql`.
 ## Pendiente de confirmar con hardware
 
 - Probado en la PC con hardware y red simulados (`tests/test_firmware_seguridad.py`), **no en una
-  placa real**: falta verificar `viper`, `binascii.crc32`, `urequests` sobre HTTPS y la memoria
-  libre con Wi-Fi y TLS activos (la foto de 56 KB se lee completa para subirla).
+  placa real**: falta verificar `viper`, `binascii.crc32` y `urequests` sobre HTTPS.
+- **Memoria (ENOMEM):** la foto se sube desde la flash en trozos de 1 KB por un socket propio
+  (`ClienteSupabase.subir_archivo`), no con `urequests`, que necesitaba los ~56 KB en RAM y los
+  escribía de una vez; además cada vuelta de red empieza con `gc.collect()`. Si aun así aparece
+  `OSError [Errno 12] ENOMEM`, imprimir `gc.mem_free()` antes de `vuelta_red` para medir.
 - El orden de bytes por defecto (`byte_alto_primero: true`) es el que indica la hoja de datos de
   la OV7670; el prototipo usaba el contrario. Confirmar con el patrón de prueba.
 - `urequests` no valida el certificado TLS en la mayoría de las versiones de MicroPython.

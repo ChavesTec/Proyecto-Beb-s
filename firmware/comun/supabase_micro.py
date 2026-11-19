@@ -15,7 +15,14 @@
 # ============================================================
 
 import json
+import os
+import socket
 import time
+
+try:
+    import ssl
+except ImportError:  # MicroPython sin TLS: solo sirve con una base local por HTTP
+    ssl = None
 
 try:
     import urequests as requests   # MicroPython
@@ -42,6 +49,58 @@ def _codificar(valor):
     return salida
 
 
+def _destino(url):
+    """'https://x.supabase.co' -> ('https', 'x.supabase.co', 443)."""
+    esquema, _, resto = url.partition("://")
+    anfitrion = resto.split("/", 1)[0]
+    host, _, puerto = anfitrion.partition(":")
+    return esquema, host, int(puerto) if puerto else (443 if esquema == "https" else 80)
+
+
+def _ruta_base(url):
+    """Ruta que venga después del host en la URL del proyecto (normalmente vacía)."""
+    resto = url.partition("://")[2]
+    return "/" + resto.split("/", 1)[1] if "/" in resto else ""
+
+
+def _envolver_tls(s, host):
+    # Igual que urequests: cifra pero no valida el certificado (ver README del firmware).
+    if hasattr(ssl, "SSLContext"):
+        contexto = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        if hasattr(contexto, "check_hostname"):
+            contexto.check_hostname = False
+        contexto.verify_mode = ssl.CERT_NONE
+        return contexto.wrap_socket(s, server_hostname=host)
+    return ssl.wrap_socket(s, server_hostname=host)
+
+
+def _escribir(s, datos):
+    """Escribe todo, aunque el socket acepte menos de una vez."""
+    if hasattr(s, "sendall"):
+        s.sendall(datos)
+        return
+    vista = memoryview(datos)
+    while len(vista):
+        n = s.write(vista)
+        if n is None:          # socket sin espacio todavía (lwIP): reintentar
+            continue
+        vista = vista[n:]
+
+
+def _leer_respuesta(s, maximo=2048):
+    """Lee la respuesta hasta que el servidor cierre (Connection: close). Solo se
+    necesitan el estado y el texto del error, así que se guardan `maximo` bytes."""
+    leer = getattr(s, "read", None) or s.recv
+    partes = bytearray()
+    while True:
+        dato = leer(512)
+        if not dato:
+            break
+        if len(partes) < maximo:
+            partes += dato[:maximo - len(partes)]
+    return bytes(partes)
+
+
 class ClienteSupabase:
     def __init__(self, url, clave_publica, correo, clave, tiempo_s=10):
         self.url = url.rstrip("/")
@@ -54,9 +113,9 @@ class ClienteSupabase:
         self.vence = 0
 
     # ---------------------------------------------------------------- HTTP
-    def _pedir(self, metodo, ruta, cuerpo=None, autenticado=True, prefer=None, crudo=None, tipo=None):
-        """cuerpo se envía como JSON; crudo (bytes) se envía tal cual con Content-Type tipo."""
-        encabezados = {"apikey": self.clave_publica, "Content-Type": tipo or "application/json"}
+    def _pedir(self, metodo, ruta, cuerpo=None, autenticado=True, prefer=None):
+        """cuerpo se envía como JSON. Los archivos van por _enviar_archivo (en trozos)."""
+        encabezados = {"apikey": self.clave_publica, "Content-Type": "application/json"}
         if autenticado:
             self._asegurar_sesion()
             encabezados["Authorization"] = "Bearer " + self.token
@@ -65,8 +124,7 @@ class ClienteSupabase:
         # El JSON va como bytes UTF-8: urequests calcula Content-Length con len(), que en
         # un str cuenta caracteres y no bytes, y un texto con tildes («está», «cámara»)
         # llegaba cortado a PostgREST (PGRST102 "Empty or invalid json").
-        datos = crudo if crudo is not None else (
-            json.dumps(cuerpo).encode("utf-8") if cuerpo is not None else None)
+        datos = json.dumps(cuerpo).encode("utf-8") if cuerpo is not None else None
         try:
             r = requests.request(metodo, self.url + ruta, data=datos, headers=encabezados,
                                  timeout=self.tiempo_s)
@@ -82,6 +140,48 @@ class ClienteSupabase:
         if estado >= 400:
             raise ErrorSupabase(estado, texto)
         return json.loads(texto) if texto else None
+
+    def _enviar_archivo(self, ruta, archivo_local, tipo, trozo):
+        """POST de un archivo sin cargarlo entero en RAM.
+
+        urequests necesita el cuerpo completo en memoria y lo escribe de una vez:
+        con la foto (~56 KB) la Pico W se quedaba sin memoria (OSError ENOMEM)
+        y las peticiones siguientes también fallaban. Aquí el archivo se lee y
+        se escribe en el socket de a `trozo` bytes con el mismo búfer."""
+        self._asegurar_sesion()
+        esquema, host, puerto = _destino(self.url)
+        largo = os.stat(archivo_local)[6]
+        cabecera = ("POST %s%s HTTP/1.1\r\nHost: %s\r\napikey: %s\r\nAuthorization: Bearer %s\r\n"
+                    "Content-Type: %s\r\nContent-Length: %d\r\nConnection: close\r\n\r\n") % (
+            _ruta_base(self.url), ruta, host, self.clave_publica, self.token, tipo, largo)
+        info = socket.getaddrinfo(host, puerto, 0, socket.SOCK_STREAM)[0]
+        s = socket.socket(info[0], info[1], info[2])
+        try:
+            s.settimeout(self.tiempo_s)
+            s.connect(info[-1])
+            if esquema == "https":
+                s = _envolver_tls(s, host)
+            _escribir(s, cabecera.encode("utf-8"))
+            bufer = bytearray(trozo)
+            vista = memoryview(bufer)
+            with open(archivo_local, "rb") as f:
+                while True:
+                    n = f.readinto(bufer)
+                    if not n:
+                        break
+                    _escribir(s, vista[:n])
+            respuesta = _leer_respuesta(s)
+        finally:
+            s.close()
+        try:
+            estado = int(respuesta.split(b" ", 2)[1])
+        except (IndexError, ValueError):
+            raise ErrorSupabase(0, "Respuesta HTTP inválida")
+        texto = respuesta.partition(b"\r\n\r\n")[2].decode("utf-8", "ignore")
+        if estado == 401:
+            self.token = None   # se reintenta una vez con _con_reintento
+        if estado >= 400:
+            raise ErrorSupabase(estado, texto)
 
     # ---------------------------------------------------------------- Auth
     def _guardar_sesion(self, datos):
@@ -150,12 +250,13 @@ class ClienteSupabase:
             "POST", "/rest/v1/eventos?on_conflict=dispositivo_id,ocurrido_en,tipo", evento,
             prefer="resolution=ignore-duplicates,return=minimal"))
 
-    def subir_archivo(self, bucket, ruta, datos, tipo):
-        """Sube bytes a Storage. Devuelve False si el archivo ya existía (subida repetida)."""
+    def subir_archivo(self, bucket, ruta, archivo_local, tipo, trozo=1024):
+        """Sube un archivo de la flash a Storage, en trozos de `trozo` bytes.
+        Devuelve False si el archivo ya existía (subida repetida)."""
         destino = "/".join(_codificar(parte) for parte in ruta.split("/"))
         try:
-            self._con_reintento(lambda: self._pedir(
-                "POST", "/storage/v1/object/%s/%s" % (bucket, destino), crudo=datos, tipo=tipo))
+            self._con_reintento(lambda: self._enviar_archivo(
+                "/storage/v1/object/%s/%s" % (bucket, destino), archivo_local, tipo, trozo))
         except ErrorSupabase as e:
             texto = str(e)
             # Storage responde 400 o 409 "Duplicate" si un intento anterior sí llegó.
