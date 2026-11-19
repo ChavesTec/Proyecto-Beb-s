@@ -1,0 +1,12 @@
+{
+  "wifi_ssid": "",
+  "wifi_clave": "",
+  "supabase_url": "https://<su-proyecto>.supabase.co",
+  "supabase_anon_key": "<clave pública anon/publishable>",
+  "correo_controlador": "controlador-c@ecosistema.test",
+  "clave_controlador": "",
+  "codigo_dispositivo": "JUGUETE-001",
+  "pines_botones": [10, 11, 12, 13, 14],
+  "pines_leds": [16, 17, 18, 19, 20],
+  "pin_buzzer": 15
+}
