@@ -1,4 +1,4 @@
-"""Corre el firmware de la seguridad (firmware/seguridad) contra Supabase LOCAL.
+r"""Corre el firmware de la seguridad (firmware/seguridad) contra Supabase LOCAL.
 
 ⚠️ Solo con Supabase local y después de pruebas\preparar_base_local.py. Uso:
     .venv\Scripts\python.exe pruebas\05_probar_firmware_seguridad.py
@@ -150,6 +150,8 @@ except Exception as e:
     repetido = False
 ok("insertar el mismo evento no da error", repetido)
 ok("y no lo duplica", len(admin.table("eventos").select("id").eq("foto_path", cap["foto_path"]).execute().data) == 1)
-ok("subir otra vez la misma foto devuelve False", cliente.subir_archivo("capturas", cap["foto_path"], r.content, "image/png") is False)
+with open("repetida.png", "wb") as f:
+    f.write(r.content)
+ok("subir otra vez la misma foto devuelve False", cliente.subir_archivo("capturas", cap["foto_path"], "repetida.png", "image/png") is False)
 
 print("\n%s" % ("TODO BIEN" if not fallas else "%d FALLA(S)" % fallas))

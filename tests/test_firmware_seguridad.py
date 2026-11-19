@@ -215,8 +215,10 @@ class ClienteFalso:
     def marcar_comando(self, comando_id, estado, resultado=None, ejecutado_en=None):
         self.marcados.append((comando_id, estado, resultado))
 
-    def subir_archivo(self, bucket, ruta, datos, tipo):
-        self.subidas.append((bucket, ruta, bytes(datos), tipo))
+    def subir_archivo(self, bucket, ruta, archivo_local, tipo):
+        assert isinstance(archivo_local, str)            # recibe la ruta, no la foto en RAM
+        with open(archivo_local, "rb") as f:
+            self.subidas.append((bucket, ruta, f.read(), tipo))
         return True
 
     def insertar_evento(self, evento):
@@ -370,22 +372,78 @@ def cliente(monkeypatch):
     return c, llamadas, respuestas
 
 
-def test_subir_archivo_envia_bytes_crudos(cliente):
-    c, llamadas, respuestas = cliente
-    respuestas.append(_Respuesta(200, '{"Key": "capturas/d1/f.png"}'))
-    assert c.subir_archivo("capturas", "d1/f 1.png", b"\x89PNG", "image/png") is True
-    metodo, url, data, enc = llamadas[0]
-    assert (metodo, url, data) == ("POST", "http://x/storage/v1/object/capturas/d1/f%201.png", b"\x89PNG")
+@pytest.fixture
+def servidor():
+    """Servidor HTTP real en 127.0.0.1: la subida usa sockets, no urequests."""
+    import http.server
+    import threading
+
+    recibido, respuestas = [], []
+
+    class Manejador(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            cuerpo = self.rfile.read(int(self.headers["Content-Length"]))
+            recibido.append((self.path, dict(self.headers), cuerpo))
+            estado, texto = respuestas.pop(0)
+            datos = texto.encode()
+            self.send_response(estado)
+            self.send_header("Content-Length", str(len(datos)))
+            self.end_headers()
+            self.wfile.write(datos)
+
+        def log_message(self, *a):
+            pass
+
+    httpd = http.server.HTTPServer(("127.0.0.1", 0), Manejador)
+    hilo = threading.Thread(target=httpd.serve_forever, daemon=True)
+    hilo.start()
+    c = supabase_micro.ClienteSupabase("http://127.0.0.1:%d" % httpd.server_port, "anon", "ctrl@x", "secreta")
+    c.token, c.vence = "t1", 10**12
+    yield c, recibido, respuestas
+    httpd.shutdown()
+
+
+def test_subir_archivo_en_trozos_sin_cargarlo_en_ram(servidor, tmp_path, monkeypatch):
+    c, recibido, respuestas = servidor
+    foto = tmp_path / "f.png"
+    contenido = bytes(range(256)) * 220 + b"fin"          # ~56 KB, como una foto real
+    foto.write_bytes(contenido)
+    escrituras = []
+    original = supabase_micro._escribir
+    monkeypatch.setattr(supabase_micro, "_escribir", lambda s, d: (escrituras.append(len(d)), original(s, d)))
+    respuestas.append((200, '{"Key": "capturas/d1/f 1.png"}'))
+    assert c.subir_archivo("capturas", "d1/f 1.png", str(foto), "image/png") is True
+    ruta, enc, cuerpo = recibido[0]
+    assert ruta == "/storage/v1/object/capturas/d1/f%201.png"
+    assert cuerpo == contenido                                     # llegó completo y en orden
     assert enc["Content-Type"] == "image/png" and enc["Authorization"] == "Bearer t1"
+    assert enc["apikey"] == "anon" and int(enc["Content-Length"]) == len(contenido)
+    assert max(escrituras) <= 1024 and len(escrituras) > 50          # nunca 56 KB de una vez
 
 
-def test_subir_archivo_repetido_no_es_error(cliente):
-    c, _, respuestas = cliente
-    respuestas.append(_Respuesta(400, '{"statusCode": "409", "error": "Duplicate", "message": "The resource already exists"}'))
-    assert c.subir_archivo("capturas", "d1/f.png", b"x", "image/png") is False
-    respuestas.append(_Respuesta(413, '{"error": "Payload too large"}'))
-    with pytest.raises(supabase_micro.ErrorSupabase):
-        c.subir_archivo("capturas", "d1/f.png", b"x", "image/png")
+def test_subir_archivo_repetido_no_es_error(servidor, tmp_path):
+    c, _, respuestas = servidor
+    foto = tmp_path / "f.png"
+    foto.write_bytes(b"x")
+    respuestas.append((400, '{"statusCode": "409", "error": "Duplicate", "message": "The resource already exists"}'))
+    assert c.subir_archivo("capturas", "d1/f.png", str(foto), "image/png") is False
+    respuestas.append((413, '{"error": "Payload too large"}'))
+    with pytest.raises(supabase_micro.ErrorSupabase) as error:
+        c.subir_archivo("capturas", "d1/f.png", str(foto), "image/png")
+    assert error.value.estado == 413
+
+
+def test_vuelta_de_red_libera_memoria(agente, monkeypatch):
+    llamadas = []
+    monkeypatch.setattr(seg, "liberar_memoria", lambda: llamadas.append(1))
+    agente.vuelta_red(0)
+    assert llamadas
+
+
+def test_destino_de_la_url():
+    assert supabase_micro._destino("https://x.supabase.co") == ("https", "x.supabase.co", 443)
+    assert supabase_micro._destino("http://192.168.1.50:44321") == ("http", "192.168.1.50", 44321)
+    assert supabase_micro._ruta_base("http://h:1") == "" and supabase_micro._ruta_base("http://h/api") == "/api"
 
 
 def test_insertar_evento_ignora_duplicados(cliente):
