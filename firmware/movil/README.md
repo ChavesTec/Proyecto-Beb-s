@@ -7,7 +7,7 @@ con Supabase según el contrato de [README_BASE_DATOS.md](../../README_BASE_DATO
 
 | Archivo | Para qué |
 |---|---|
-| `main.py` | Arranque: Wi-Fi, hora NTP, hilo de red y bucle de luces |
+| `main.py` | Arranque: Wi-Fi, hora NTP, red en el núcleo principal y luces en el segundo núcleo |
 | `luces.py` | Secuencias y estado (sin red ni hardware: se prueba en la PC) |
 | `salidas.py` | Anillo WS2812B (`neopixel`) o LEDs sueltos por PWM |
 | `../comun/supabase_micro.py` | Auth, `registrar_senal`, `configuracion` y `comandos` por HTTP (compartido con la seguridad) |
@@ -19,9 +19,9 @@ con Supabase según el contrato de [README_BASE_DATOS.md](../../README_BASE_DATO
 |---|---|---|
 | Iniciar sesión | Cuenta del controlador (`controlador-c@ecosistema.test`) | Al arrancar y al vencer el token |
 | Su id | `dispositivos?codigo=eq.MOVIL-001` | Al arrancar |
-| Encendido, secuencia, velocidad | Lee `configuracion` (`movil_encendido`, `movil_secuencia`, `movil_velocidad`) | 2 s |
-| Señal de vida y estado real | `rpc('registrar_senal', {p_dispositivo, p_lectura})` | ~4 s |
-| Prueba de luz (HU-07) | Comando `probar_luz` → destello de 2 s → `ejecutado` | 2 s |
+| Encendido, secuencia, velocidad | Lee `configuracion` (`movil_encendido`, `movil_secuencia`, `movil_velocidad`) | 5 s |
+| Señal de vida y estado real | `rpc('registrar_senal', {p_dispositivo, p_lectura})` | 5 s |
+| Prueba de luz (HU-07) | Comando `probar_luz` → destello de 2 s → `ejecutado` | 5 s |
 
 `p_lectura` = `{"encendido": bool, "secuencia": n, "velocidad": n}` y, si está apagado, `"motivo"`
 (`inicio`, `usuario`, `sin_conexion`). La app muestra esto como «El móvil informa…».
@@ -51,6 +51,22 @@ llegaría la orden de apagar de un horario) y retoma lo que diga la base cuando 
 3. Subir a la placa `main.py`, `luces.py`, `salidas.py`, `../comun/supabase_micro.py` y `config.json`
    (todos en la raíz de la placa).
 4. Reiniciar: en la app el móvil pasa a «En línea» en unos segundos.
+
+## Estabilidad de la conexión
+
+En las primeras pruebas el móvil perdía la señal a los 1-2 minutos. Se corrigió así:
+
+- **La red corre en el núcleo principal** y las luces en el segundo (`_thread`), como en el
+  juguete. En la Pico W el Wi-Fi (CYW43/lwIP) no es seguro desde el segundo núcleo.
+- **Una vuelta de red cada 5 s** (antes 2 s): son 3 conexiones HTTPS por vuelta, y cada una ocupa
+  ~30-40 KB de RAM y un socket de lwIP que tarda en liberarse. Cada vuelta empieza con
+  `gc.collect()`.
+- **Ahorro de energía del Wi-Fi desactivado** (`pm=WLAN.PM_NONE` o `0xa11140` en la Pico W) y
+  `disconnect()` antes de reconectar.
+
+Si vuelve a pasar, mirar en Thonny el mensaje `red: ...`: `ENOMEM` es falta de RAM y
+`OSError 23`/`-1` son sockets agotados. Si el anillo se alimenta del pin de 3,3 V de la placa,
+pasarlo a una fuente de 5 V aparte (tierra común): las caídas de voltaje también tumban el Wi-Fi.
 
 ## Pendiente de confirmar con hardware
 
