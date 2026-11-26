@@ -1,0 +1,15 @@
+{
+  "wifi_ssid": "",
+  "wifi_clave": "",
+  "supabase_url": "https://<su-proyecto>.supabase.co",
+  "supabase_anon_key": "<clave pública anon/publishable>",
+  "correo_controlador": "<cuenta del controlador que maneja el colchón>",
+  "clave_controlador": "",
+  "codigo_dispositivo": "COLCHON-001",
+  "pin_dt": 14,
+  "pin_sck": 15,
+  "pin_buzzer": 16,
+  "buzzer_tipo": "activo",
+  "pin_deteccion_cuna": 22,
+  "segundos_confirmacion": 2
+}
