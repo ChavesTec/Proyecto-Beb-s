@@ -8,7 +8,8 @@
 #   * leer configuracion                             (al arrancar y en sondeo)
 #   * leer y marcar comandos pendientes
 #   * subir una foto a Storage e insertar eventos (aparato de seguridad)
-# Lo usan el móvil (firmware/movil) y la seguridad (firmware/seguridad): se
+# Lo usan el móvil (firmware/movil), la seguridad (firmware/seguridad) y el
+# biberón (firmware/biberon): se
 # copia a la placa junto a su main.py.
 # Usa la clave pública (anon). Nunca la clave service_role.
 # Ningún método imprime tokens ni contraseñas.

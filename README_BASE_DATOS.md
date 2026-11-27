@@ -114,7 +114,7 @@ Solo insertan `dispositivo_id`, `tipo`, `valor`, `unidad`, `descripcion`,
 | `tipo` | `valor` | Qué hace el trigger |
 |---|---|---|
 | `temperatura`, `humedad` | °C, % | Compara con los umbrales y alerta; repite cada `alerta_repeticion_min` |
-| `temperatura_biberon` | °C | Alerta "Demasiado caliente" o "Demasiado fría" |
+| `temperatura_biberon` | °C | Alerta "Demasiado caliente" o "Demasiado fría" ([firmware/biberon](firmware/biberon/README.md)) |
 | `peso` | g | Solo guarda |
 | `movimiento` | | Fuera de la ventana **se descarta**; dentro, guarda y alerta |
 | `puerta`, `presencia` | | Con seguridad desarmada **se descarta**; armada, guarda y alerta |
