@@ -11,10 +11,11 @@ COMUN = CARPETA.parent / "comun"
 
 
 class _Pin:
-    OUT = 1
+    IN, OUT, PULL_UP = 0, 1, 2
 
-    def __init__(self, numero, modo=None, value=0):
-        self.numero, self.v = numero, value
+    def __init__(self, numero, modo=None, pull=None, value=0):
+        self.numero, self.modo, self.pull = numero, modo, pull
+        self.v = 1 if pull == _Pin.PULL_UP else value
 
     def value(self, v=None):
         if v is None:
@@ -60,11 +61,17 @@ if _previo is None:
 else:
     sys.modules["machine"] = _previo
 import termometro  # noqa: E402
-from termometro import CALIENTE, EN_RANGO, FRIA, SIN_LECTURA, Cola, Termometro  # noqa: E402
+from termometro import CALIENTE, EN_RANGO, FRIA, SIN_LECTURA, Boton, Cola, Termometro  # noqa: E402
 
 _spec = importlib.util.spec_from_file_location("biberon_main", CARPETA / "main.py")
 biberon = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(biberon)
+
+
+def _midiendo():
+    t = Termometro()
+    t.alternar(0, 600_000)
+    return t
 
 
 # ----------------------------------------------------------------- lógica
@@ -83,7 +90,7 @@ def test_clasificar_igual_que_el_trigger(t, estado):
 
 
 def test_leds_segun_estado():
-    t = Termometro()
+    t = _midiendo()
     t.al_medir(37)
     assert t.leds(0) == (False, True)            # verde
     t.al_medir(45)
@@ -95,7 +102,7 @@ def test_leds_segun_estado():
 
 
 def test_cambio_de_rango_desde_la_app_reclasifica():
-    t = Termometro()
+    t = _midiendo()
     t.al_medir(38)
     assert t.estado == EN_RANGO
     assert t.aplicar_config("30.00", "37.00") is True     # PostgREST manda numeric como texto o número
@@ -117,11 +124,11 @@ def test_al_medir_avisa_solo_si_cambia_el_estado():
 
 
 def test_lectura_y_evento():
-    t = Termometro()
+    t = _midiendo()
     assert t.evento("2026-11-27T10:00:00Z") is None
     assert "aviso" in t.lectura()
     t.al_medir(36.66)
-    assert t.lectura() == {"temperatura_biberon": 36.7}
+    assert t.lectura() == {"midiendo": True, "temperatura_biberon": 36.7}
     assert t.evento("2026-11-27T10:00:00Z") == {"tipo": "temperatura_biberon", "valor": 36.7, "unidad": "°C",
                                                  "ocurrido_en": "2026-11-27T10:00:00Z"}
     assert "ocurrido_en" not in t.evento(None)
@@ -218,8 +225,8 @@ class ClienteFalso:
         self.eventos.append(evento)
 
 
-def _agente(cliente):
-    t = Termometro()
+def _agente(cliente, midiendo=True):
+    t = _midiendo() if midiendo else Termometro()
     a = biberon.Agente({"codigo_dispositivo": "BIBERON-001"}, t, cliente)
     a.preparar = lambda: (setattr(a, "dispositivo_id", cliente.id_dispositivo("BIBERON-001")), a.aplicar_config())
     return a, t
@@ -232,7 +239,7 @@ def test_vuelta_lee_rango_envia_senal_y_muestra():
     a.vuelta(0)
     assert cliente.columnas == "temp_min,temp_max"
     assert t.estado == CALIENTE
-    assert cliente.senales == [{"temperatura_biberon": 39.0}]
+    assert cliente.senales == [{"midiendo": True, "temperatura_biberon": 39.0}]
     assert cliente.eventos[0]["tipo"] == "temperatura_biberon"
     assert cliente.eventos[0]["dispositivo_id"] == "uuid-bib"
     a.vuelta(1)
@@ -276,3 +283,134 @@ def test_comandos():
     leds = hardware.Leds(15, 14)
     biberon.pintar(t, a, leds, termometro.ticks_ms())
     assert leds.rojo.value() == leds.verde.value()      # destello: los dos juntos
+
+
+def test_tras_muchas_fallas_pide_reiniciar_wifi_y_sesion():
+    cliente = ClienteFalso()
+    a, t = _agente(cliente)
+    a.vuelta = lambda contador: (_ for _ in ()).throw(OSError("ECONNRESET"))
+    cliente.token = "jwt"
+    pedidos = [a.vuelta_segura(i) for i in range(biberon.FALLAS_PARA_RECONECTAR)]
+    assert pedidos == [False] * (biberon.FALLAS_PARA_RECONECTAR - 1) + [True]
+    assert cliente.token is None and a.fallas == 0
+
+
+def test_una_vuelta_buena_reinicia_el_contador():
+    a, t = _agente(ClienteFalso())
+    a.fallas = 5
+    assert a.vuelta_segura(0) is False and a.fallas == 0
+
+
+class _WLAN:
+    def __init__(self):
+        self.conectada, self.conexiones, self.desconexiones, self.pm = False, 0, 0, None
+
+    def isconnected(self):
+        return self.conectada
+
+    def active(self, v=None):
+        return True
+
+    def config(self, pm=None):
+        self.pm = pm
+
+    def connect(self, ssid, clave):
+        self.conexiones += 1
+
+    def disconnect(self):
+        self.desconexiones += 1
+        self.conectada = False
+
+
+def test_wifi_reconecta_sin_bloquear_y_sin_ahorro_de_energia(monkeypatch):
+    wlan = _WLAN()
+    monkeypatch.setattr(biberon.network, "WLAN", lambda modo: wlan, raising=False)
+    reloj = [0]
+    monkeypatch.setattr(biberon, "ticks_ms", lambda: reloj[0])
+    w = biberon.Wifi({"wifi_ssid": "casa", "wifi_clave": "x"}, reintento_s=30)
+    assert w.conectado() is False and wlan.conexiones == 1 and wlan.pm == biberon.PM_SIN_AHORRO
+    reloj[0] = 10_000
+    assert w.conectado() is False and wlan.conexiones == 1      # espera antes de reintentar
+    reloj[0] = 31_000
+    w.conectado()
+    assert wlan.conexiones == 2
+    wlan.conectada = True
+    assert w.conectado() is True
+    w.reiniciar()
+    assert wlan.desconexiones == 1
+    w.conectado()
+    assert wlan.conexiones == 3                                  # reintenta enseguida
+
+
+def test_bucle_leds_sobrevive_a_un_error_y_apaga_al_salir(monkeypatch):
+    a, t = _agente(ClienteFalso())
+    leds = hardware.Leds(15, 14)
+    vueltas = [0]
+
+    def medir():
+        vueltas[0] += 1
+        if vueltas[0] == 1:
+            raise OSError("onewire")
+        if vueltas[0] == 3:
+            a.activo = False
+        return 37
+
+    monkeypatch.setattr(biberon.time, "sleep_ms", lambda ms: None, raising=False)
+    pulsador = types.SimpleNamespace(presionado=lambda: False)
+    biberon.bucle_leds(t, a, types.SimpleNamespace(medir=medir), leds, Boton(), pulsador, 600_000)
+    assert vueltas[0] == 3 and (leds.rojo.value(), leds.verde.value()) == (0, 0)
+
+
+# ------------------------------------------------------------------ botón
+def test_boton_cuenta_cada_pulsacion_una_vez_y_filtra_rebotes():
+    b = Boton(bloqueo_ms=300)
+    lecturas = [(False, 0), (True, 50), (True, 100), (False, 150), (True, 200), (False, 250),
+                (True, 400), (False, 450), (True, 800)]
+    assert [b.pulsado(p, ms) for p, ms in lecturas] == [False, True, False, False, False, False,
+                                                       True, False, True]
+
+
+def test_sin_medir_leds_apagados_y_no_manda_temperaturas():
+    t = Termometro()
+    t.al_medir(45)
+    assert t.leds(0) == (False, False)
+    assert t.lectura() == {"midiendo": False}
+    assert t.evento("2026-11-27T10:00:00Z") is None
+
+
+def test_medicion_empieza_se_detiene_y_vence():
+    t = Termometro()
+    assert t.alternar(1000, 5000) is True and t.midiendo
+    assert t.vencio(5999) is False
+    assert t.vencio(6000) is True and not t.midiendo
+    t.alternar(0, 5000)
+    assert t.alternar(100, 5000) is False and not t.midiendo     # segunda pulsación detiene
+
+
+def test_pulsar_el_boton_manda_la_primera_muestra_enseguida():
+    cliente = ClienteFalso()
+    a, t = _agente(cliente, midiendo=False)
+    leds = hardware.Leds(15, 14)
+    sensor = types.SimpleNamespace(medir=lambda: 30)
+    boton, pulsador = Boton(), hardware.Pulsador(13)
+    assert pulsador.pin.numero == 13 and pulsador.pin.pull == _Pin.PULL_UP
+    biberon.medir_y_mostrar(t, a, sensor, leds, 0)
+    a.vuelta(0)
+    assert cliente.eventos == [] and cliente.senales == [{"midiendo": False}]
+    assert (leds.rojo.value(), leds.verde.value()) == (0, 0)
+
+    pulsador.pin.value(0)                                       # se pulsa (a GND)
+    biberon.atender_boton(t, a, boton, pulsador, 1000, 600_000)
+    biberon.medir_y_mostrar(t, a, sensor, leds, 1000)
+    assert (leds.rojo.value(), leds.verde.value()) == (1, 0)    # 30 °C: demasiado fría
+    a.vuelta(1)
+    assert [e["valor"] for e in cliente.eventos] == [30.0]
+
+    pulsador.pin.value(1)
+    biberon.atender_boton(t, a, boton, pulsador, 601_000, 600_000)   # pasaron los 10 min
+    assert not t.midiendo
+    biberon.medir_y_mostrar(t, a, sensor, leds, 601_000)
+    assert (leds.rojo.value(), leds.verde.value()) == (0, 0)
+    a.ultima_muestra = -100_000
+    a.vuelta(2)
+    assert len(cliente.eventos) == 1                            # ya no manda muestras

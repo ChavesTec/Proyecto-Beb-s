@@ -4,6 +4,9 @@
 # Reglas (README_BASE_DATOS.md y migraciones):
 #   * El rango seguro de la leche está en configuracion.temp_min / temp_max
 #     (35 a 40 °C por defecto, CA-33.1). La app lo cambia y el aparato lo lee.
+#   * La medición empieza con el botón y dura minutos_medicion (o hasta otra
+#     pulsación). Fuera de ella los LEDs están apagados y no se envían
+#     temperaturas: solo la señal de vida, con {"midiendo": false}.
 #   * Los LEDs se deciden AQUÍ, en la placa, con el último rango conocido: así
 #     indican el estado al instante aunque no haya red.
 #       verde  -> la leche está dentro del rango
@@ -51,12 +54,54 @@ def clasificar(temperatura, temp_min, temp_max):
     return EN_RANGO
 
 
+class Boton:
+    """Detecta cada pulsación una sola vez (flanco de bajada con antirrebote)."""
+
+    def __init__(self, bloqueo_ms=300):
+        self.bloqueo_ms = bloqueo_ms
+        self.anterior = False
+        self.ultima = None
+
+    def pulsado(self, presionado, ahora_ms):
+        nuevo = presionado and not self.anterior
+        self.anterior = presionado
+        if not nuevo:
+            return False
+        if self.ultima is not None and ticks_diff(ahora_ms, self.ultima) < self.bloqueo_ms:
+            return False          # rebote del contacto
+        self.ultima = ahora_ms
+        return True
+
+
 class Termometro:
     def __init__(self, temp_min=TEMP_MIN, temp_max=TEMP_MAX):
         self.temp_min = temp_min
         self.temp_max = temp_max
         self.temperatura = None
         self.estado = SIN_LECTURA
+        self.midiendo = False
+        self.fin_ms = None        # ticks_ms en que termina la medición
+
+    # --------------------------------------------------------- medición
+    def alternar(self, ahora_ms, duracion_ms):
+        """Pulsación del botón: empieza o detiene. Devuelve True si empezó."""
+        if self.midiendo:
+            self.detener()
+            return False
+        self.midiendo = True
+        self.fin_ms = ticks_add(ahora_ms, duracion_ms)
+        return True
+
+    def detener(self):
+        self.midiendo = False
+        self.fin_ms = None
+
+    def vencio(self, ahora_ms):
+        """Detiene la medición si ya pasó su duración. Devuelve True si la detuvo."""
+        if self.midiendo and ticks_diff(ahora_ms, self.fin_ms) >= 0:
+            self.detener()
+            return True
+        return False
 
     def aplicar_config(self, temp_min, temp_max):
         """Toma el rango de la base. Ignora valores inválidos. Devuelve True si cambió."""
@@ -82,6 +127,8 @@ class Termometro:
 
     def leds(self, ahora_ms=None):
         """(rojo, verde) encendidos o no, según el estado."""
+        if not self.midiendo:
+            return False, False
         if self.estado == EN_RANGO:
             return False, True
         if self.estado in (CALIENTE, FRIA):
@@ -92,12 +139,16 @@ class Termometro:
 
     def lectura(self):
         """p_lectura de registrar_senal (vista en vivo de la app)."""
+        if not self.midiendo:
+            return {"midiendo": False}
         if self.temperatura is None:
-            return {"temperatura_biberon": None, "aviso": "El sensor de temperatura no responde"}
-        return {"temperatura_biberon": self.temperatura}
+            return {"midiendo": True, "temperatura_biberon": None,
+                    "aviso": "El sensor de temperatura no responde"}
+        return {"midiendo": True, "temperatura_biberon": self.temperatura}
 
     def evento(self, ocurrido_en):
-        if self.temperatura is None:
+        """Muestra para eventos. None si no se está midiendo o no hay lectura."""
+        if not self.midiendo or self.temperatura is None:
             return None
         evento = {"tipo": "temperatura_biberon", "valor": self.temperatura, "unidad": "°C"}
         if ocurrido_en:

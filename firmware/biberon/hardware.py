@@ -4,6 +4,7 @@
 # DS18B20 (1 hilo) en GPIO22. Necesita una resistencia de 4.7 kΩ entre DATA y
 # 3V3 (algunos módulos ya la traen).
 # LEDs rojo y verde, cada uno con su resistencia (220-330 Ω) a GND.
+# Botón entre su pin y GND (usa la pull-up interna: no lleva resistencia).
 # ============================================================
 
 from machine import Pin
@@ -50,6 +51,16 @@ class SensorDS18B20:
         except Exception:
             self.roms, self.pedida, self.ultima = [], None, None   # se vuelve a buscar la sonda
         return self.ultima
+
+
+class Pulsador:
+    """Botón entre el pin y GND, con la resistencia pull-up interna."""
+
+    def __init__(self, pin):
+        self.pin = Pin(pin, Pin.IN, Pin.PULL_UP)
+
+    def presionado(self):
+        return self.pin.value() == 0
 
 
 class Leds:

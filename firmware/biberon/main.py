@@ -2,7 +2,7 @@
 # main.py · EP08 Termómetro del biberón conectado a Supabase (MicroPython)
 #
 # Placa: Raspberry Pi Pico W o ESP32. Sonda DS18B20 en GPIO22, LED verde en
-# GPIO14 y LED rojo en GPIO15 (los pines se pueden cambiar en config.json).
+# GPIO14, LED rojo en GPIO15 y botón en GPIO13 (se pueden cambiar en config.json).
 # Copiar a la placa: main.py, termometro.py, hardware.py,
 # ../comun/supabase_micro.py y config.json (a partir de config.example.json;
 # NO se sube a Git).
@@ -11,15 +11,24 @@
 #   * Inicia sesión con la cuenta del controlador y busca su id por código.
 #   * Lee configuracion (temp_min, temp_max) al arrancar y cada pocos segundos:
 #     la app la cambia en el panel del biberón.
-#   * registrar_senal cada 5 s con {"temperatura_biberon": t}.
-#   * Inserta el evento temperatura_biberon cada minuto y, además, en cuanto la
-#     leche entra o sale del rango. El trigger crea «Demasiado caliente» o
+#   * La medición empieza al pulsar el botón y dura minutos_medicion (otra
+#     pulsación la detiene antes). Fuera de ella los LEDs están apagados.
+#   * registrar_senal cada 5 s, siempre (así sigue «En línea»):
+#     {"midiendo": true, "temperatura_biberon": t} o {"midiendo": false}.
+#   * Mientras mide, inserta el evento temperatura_biberon al empezar, cada
+#     minuto y en cuanto la leche entra o sale del rango. El trigger crea «Demasiado caliente» o
 #     «Demasiado fría» y las repite cada alerta_repeticion_min.
 #   * Atiende probar_luz (HU-07): destello de los dos LEDs durante 2 s.
 #
-# Los LEDs se actualizan en el bucle principal con el último rango conocido,
-# así nunca esperan a la red. La red corre en otro hilo y es la única que toca
-# la cola (en la Pico W los dos hilos corren en núcleos distintos).
+# Núcleos (Pico W):
+#   * Núcleo 0 (bucle principal): Wi-Fi y Supabase. El chip CYW43 y la pila
+#     lwIP se atienden desde el núcleo 0; usar la red desde el núcleo 1
+#     (_thread) hacía que la placa se desconectara al rato.
+#   * Núcleo 1 (_thread): botón, sonda y LEDs. Así los LEDs nunca esperan a una
+#     petición HTTPS, y usan el último rango conocido aunque no haya red.
+# Solo el núcleo 0 toca la cola; el núcleo 1 solo levanta pedir_muestra.
+# Además: ahorro de energía del Wi-Fi apagado, gc.collect() en cada vuelta y
+# reconexión sin bloquear si se cae la red.
 # ============================================================
 
 import json
@@ -27,13 +36,20 @@ import time
 
 import network
 
+try:
+    import gc
+except ImportError:
+    gc = None
+
 from supabase_micro import ClienteSupabase
-from termometro import Cola, Termometro, ticks_add, ticks_diff, ticks_ms
+from termometro import Boton, Cola, Termometro, ticks_add, ticks_diff, ticks_ms
 
 SEGUNDOS_SENAL = 5         # contrato: señal de vida cada 5 s
 SEGUNDOS_CONFIG = 2        # sondeo de configuracion y comandos
 SEGUNDOS_MUESTRA = 60      # contrato: muestra para el historial cada minuto
 COLUMNAS_CONFIG = "temp_min,temp_max"
+FALLAS_PARA_RECONECTAR = 10   # ~20 s seguidos sin poder hablar con la base
+PM_SIN_AHORRO = 0xa11140      # CYW43 (Pico W): sin ahorro de energía, la conexión no se duerme
 
 
 def cargar_config():
@@ -41,9 +57,23 @@ def cargar_config():
         return json.load(f)
 
 
+def liberar_memoria():
+    if gc:
+        gc.collect()
+
+
+def sin_ahorro_de_energia(wlan):
+    try:
+        wlan.config(pm=PM_SIN_AHORRO)   # solo existe en la Pico W
+    except Exception:
+        pass
+
+
 def conectar_wifi(cfg, espera_s=20):
+    """Solo al arrancar: espera hasta espera_s a que conecte."""
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
+    sin_ahorro_de_energia(wlan)
     if not wlan.isconnected():
         wlan.connect(cfg["wifi_ssid"], cfg["wifi_clave"])
         inicio = time.time()
@@ -69,8 +99,41 @@ def ahora_iso():
     return "%04d-%02d-%02dT%02d:%02d:%02dZ" % a[:6]
 
 
+class Wifi:
+    """Reconexión sin bloquear: pide conectar y sigue; revisa en la próxima vuelta."""
+
+    def __init__(self, cfg, reintento_s=30):
+        self.cfg = cfg
+        self.reintento_s = reintento_s
+        self.wlan = network.WLAN(network.STA_IF)
+        self.ultimo_intento = None
+
+    def conectado(self):
+        if self.wlan.isconnected():
+            return True
+        if self.ultimo_intento is None or ticks_diff(ticks_ms(), self.ultimo_intento) > self.reintento_s * 1000:
+            self.ultimo_intento = ticks_ms()
+            print("wifi: reconectando")
+            try:
+                self.wlan.active(True)
+                sin_ahorro_de_energia(self.wlan)
+                self.wlan.connect(self.cfg["wifi_ssid"], self.cfg["wifi_clave"])
+            except OSError as e:
+                print("wifi:", e)
+        return False
+
+    def reiniciar(self):
+        """La placa cree estar conectada pero no llega nada: se fuerza una conexión nueva."""
+        print("wifi: sin respuesta de la base, se reinicia la conexión")
+        try:
+            self.wlan.disconnect()
+        except OSError:
+            pass
+        self.ultimo_intento = None
+
+
 class Agente:
-    """Hilo de red: rango, señal, muestras y comandos."""
+    """Red (núcleo 0): rango, señal, muestras y comandos."""
 
     def __init__(self, cfg, termometro, cliente=None):
         self.cfg = cfg
@@ -83,6 +146,7 @@ class Agente:
         self.destello_hasta = None      # ticks_ms hasta el que dura probar_luz
         self.pedir_muestra = False      # el bucle de LEDs avisa que cambió el estado
         self.activo = True
+        self.fallas = 0                 # vueltas seguidas con error
 
     def preparar(self):
         sincronizar_hora()
@@ -120,33 +184,52 @@ class Agente:
 
     def vuelta(self, contador):
         """Una vuelta del ciclo de red."""
+        liberar_memoria()               # cada HTTPS deja basura; sin esto se fragmenta la RAM
         if self.dispositivo_id is None:
             self.preparar()
         self.aplicar_config()
         self.atender_comandos()
         if contador % (SEGUNDOS_SENAL // SEGUNDOS_CONFIG or 1) == 0:
             self.cliente.registrar_senal(self.dispositivo_id, self.termometro.lectura())
-        if self.pedir_muestra or self.toca_muestra():
+        if not self.termometro.midiendo:
+            self.pedir_muestra = False
+        elif self.pedir_muestra or self.toca_muestra():
             self.pedir_muestra = False
             self.guardar_muestra()
         self.cola.enviar(self.cliente.insertar_evento)
 
-    def ejecutar(self):
-        contador = 0
-        while self.activo:
-            try:
-                if not network.WLAN(network.STA_IF).isconnected():
-                    conectar_wifi(self.cfg)
-                self.vuelta(contador)
-            except Exception as e:  # La red nunca debe trabar los LEDs.
-                print("red:", type(e).__name__, str(e)[:80])
-            contador += 1
-            time.sleep(SEGUNDOS_CONFIG)
+    def vuelta_segura(self, contador):
+        """vuelta() sin dejar escapar errores. Devuelve True si hay que reiniciar el Wi-Fi."""
+        try:
+            self.vuelta(contador)
+            self.fallas = 0
+            return False
+        except Exception as e:  # La red nunca debe detener el aparato.
+            self.fallas += 1
+            libre = gc.mem_free() if gc and hasattr(gc, "mem_free") else "?"
+            print("red:", type(e).__name__, str(e)[:80], "· memoria libre:", libre)
+            if self.fallas >= FALLAS_PARA_RECONECTAR:
+                self.fallas = 0
+                self.cliente.token = None   # sesión nueva al volver
+                return True
+            return False
+
+
+def atender_boton(termometro, agente, boton, pulsador, ahora_ms, duracion_ms):
+    if boton.pulsado(pulsador.presionado(), ahora_ms):
+        if termometro.alternar(ahora_ms, duracion_ms):
+            print("Medición iniciada")
+            agente.pedir_muestra = True       # primera muestra enseguida
+        else:
+            print("Medición detenida")
+    elif termometro.vencio(ahora_ms):
+        print("Medición terminada por tiempo")
 
 
 def medir_y_mostrar(termometro, agente, sensor, leds, ahora_ms):
+    # La sonda se lee siempre, para tener el dato fresco al pulsar el botón.
     # Entró o salió del rango: muestra inmediata para que la alerta no espere al minuto.
-    if termometro.al_medir(sensor.medir()):
+    if termometro.al_medir(sensor.medir()) and termometro.midiendo:
         agente.pedir_muestra = True
     pintar(termometro, agente, leds, ahora_ms)
 
@@ -160,38 +243,59 @@ def pintar(termometro, agente, leds, ahora_ms):
         leds.mostrar(*termometro.leds(ahora_ms))
 
 
+def bucle_leds(termometro, agente, sensor, leds, boton, pulsador, duracion_ms):
+    """Núcleo 1: botón, sonda y LEDs, cada 50 ms."""
+    try:
+        while agente.activo:
+            try:
+                ahora = ticks_ms()
+                atender_boton(termometro, agente, boton, pulsador, ahora, duracion_ms)
+                medir_y_mostrar(termometro, agente, sensor, leds, ahora)   # no bloquea
+            except Exception as e:
+                print("leds:", type(e).__name__, e)
+            time.sleep_ms(50)
+    finally:
+        leds.apagar()
+
+
 def principal():
-    from hardware import Leds, SensorDS18B20
+    from hardware import Leds, Pulsador, SensorDS18B20
 
     cfg = cargar_config()
     sensor = SensorDS18B20(cfg.get("pin_sensor", 22))
     leds = Leds(cfg.get("pin_led_rojo", 15), cfg.get("pin_led_verde", 14))
+    pulsador = Pulsador(cfg.get("pin_boton", 13))
+    boton = Boton()
+    duracion_ms = int(cfg.get("minutos_medicion", 10) * 60000)
     termometro = Termometro()
     agente = Agente(cfg, termometro)
     conectar_wifi(cfg)
+    wifi = Wifi(cfg)
 
     try:
         import _thread
 
-        _thread.start_new_thread(agente.ejecutar, ())
+        _thread.start_new_thread(bucle_leds, (termometro, agente, sensor, leds, boton, pulsador, duracion_ms))
         en_hilo = True
     except ImportError:
-        en_hilo = False
+        en_hilo = False   # sin hilos: los LEDs se atienden aquí y se pausan durante cada petición
 
-    ultima_red = ticks_ms()
+    ultima_red = None
+    contador = 0
     try:
         while True:
             ahora = ticks_ms()
-            medir_y_mostrar(termometro, agente, sensor, leds, ahora)   # no bloquea (ver hardware.py)
-            if not en_hilo and ticks_diff(ahora, ultima_red) >= SEGUNDOS_CONFIG * 1000:
+            if not en_hilo:
+                atender_boton(termometro, agente, boton, pulsador, ahora, duracion_ms)
+                medir_y_mostrar(termometro, agente, sensor, leds, ahora)
+            if ultima_red is None or ticks_diff(ahora, ultima_red) >= SEGUNDOS_CONFIG * 1000:
                 ultima_red = ahora
-                try:
-                    agente.vuelta(0)
-                except Exception as e:
-                    print("red:", type(e).__name__)
+                if wifi.conectado() and agente.vuelta_segura(contador):
+                    wifi.reiniciar()
+                contador += 1
             time.sleep_ms(50)
     finally:
-        agente.activo = False
+        agente.activo = False   # el núcleo 1 sale de su bucle y apaga los LEDs
         leds.apagar()
 
 

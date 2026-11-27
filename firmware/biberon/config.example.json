@@ -8,5 +8,7 @@
   "codigo_dispositivo": "BIBERON-001",
   "pin_sensor": 22,
   "pin_led_verde": 14,
-  "pin_led_rojo": 15
+  "pin_led_rojo": 15,
+  "pin_boton": 13,
+  "minutos_medicion": 10
 }
