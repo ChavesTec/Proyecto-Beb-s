@@ -1,0 +1,14 @@
+{
+  "wifi_ssid": "",
+  "wifi_clave": "",
+  "supabase_url": "https://<su-proyecto>.supabase.co",
+  "supabase_anon_key": "<clave pública anon/publishable>",
+  "correo_controlador": "controlador-c@ecosistema.test",
+  "clave_controlador": "",
+  "codigo_dispositivo": "BIBERON-001",
+  "pin_sensor": 22,
+  "pin_led_verde": 14,
+  "pin_led_rojo": 15,
+  "pin_boton": 13,
+  "minutos_medicion": 10
+}
